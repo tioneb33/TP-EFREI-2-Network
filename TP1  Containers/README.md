@@ -341,22 +341,9 @@ Key:
  
 Host : 2977c2a9c825
 
-~~~
+# Part IV : Docker security
 
-azureuser@toto:~/el-app$ docker run -it --rm --privileged --pid=host ubuntu bash
-Unable to find image 'ubuntu:latest' locally
-latest: Pulling from library/ubuntu
-5a7813e071bf: Pull complete
-Digest: sha256:72297848456d5d37d1262630108ab308d3e9ec7ed1c3286a32fe09856619a782
-Status: Downloaded newer image for ubuntu:latest
-root@39d624567660:/# cat /etc/shadow
-root:*:20115:0:99999:7:::
-daemon:*:20115:0:99999:7:::
-bin:*:20115:0:99999:7:::
-sys:*:20115:0:99999:7:::
-sync:*:20115:0:99999:7:::
-etc ...... 
-~~~
+
 ## 1. Le groupe docker
 
 
