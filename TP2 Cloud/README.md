@@ -374,7 +374,7 @@ main.tf
 ~~~
 provider "azurerm" {
   features {}
-  subscription_id = "22df3f3e-3b12-4e67-a5fa-b5a47a09b315"
+  subscription_id = ""
 }
 
 resource "azurerm_resource_group" "main" {
@@ -396,6 +396,13 @@ resource "azurerm_subnet" "internal" {
   address_prefixes     = ["10.0.2.0/24"]
 }
 
+resource "azurerm_public_ip" "pip" {
+  name                = "${var.prefix}-pip"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  allocation_method   = "Static"
+}
+
 resource "azurerm_network_interface" "main" {
   name                = "${var.prefix}-nic1"
   resource_group_name = azurerm_resource_group.main.name
@@ -404,7 +411,43 @@ resource "azurerm_network_interface" "main" {
     name                          = "primary"
     subnet_id                     = azurerm_subnet.internal.id
     private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = azurerm_public_ip.pip.id 
   }
+}
+
+resource "azurerm_network_security_group" "ssh" {
+  name                = "${var.prefix}-ssh-nsg"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+
+  security_rule {
+    name                       = "allow_ssh"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    source_address_prefix      = "*"
+    destination_port_range     = "22"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "wikijs"
+    priority                   = 101
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    source_address_prefix      = "*"
+    destination_port_range     = "10101"
+    destination_address_prefix = "*"
+  }
+}
+
+resource "azurerm_network_interface_security_group_association" "main" {
+  network_interface_id      = azurerm_network_interface.main.id
+  network_security_group_id = azurerm_network_security_group.ssh.id
 }
 
 resource "azurerm_linux_virtual_machine" "main" {
@@ -431,31 +474,87 @@ resource "azurerm_linux_virtual_machine" "main" {
     caching              = "ReadWrite"
   }
 
-  custom_data = file("C:\\Users\\benoi\\Documents\\terra\\cloud-init.txt")
+  custom_data = base64encode(file("C:\\Users\\benoi\\Documents\\terra\\cloud-init.txt"))
 }
+
 ~~~
 
 cloud-init.txt
 
 ~~~
-
+#cloud-config
 users:
   - default
-  - name: it10
+  - name: it5
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
     shell: /bin/bash
-    ssh_authorized_keys:
-      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQD4nKTe5oQFsqr6BY0wALZTy2m3Rq2HV6cMyyrkq5x8C/jglxLSrLAcp9eMDpVMdptud7DBKCuiuUPTfB5bq7smR2V+FOXQlZfrBIbTW9gCXFVZaqQRQoshTa9pPFxELNODxt0HpwC5qZ9PsdbXe+b0kg/RyrSV0MxQEi2TcSlrLXbKU0ej85YvjIIyqsMkGedhg5E9u+wLdkZ/wMszwCOvBFKmkHcxkOvX+8Zm9lR24HDugt9vURXIglPYA1T7J6/vJvLIZVgPcbdWwHL/VxSqVs/eFPk13GCNgaiifmXa8OlXmnGKV7CHzyRPUugpUTMZtGXhy05skQXV0BByQ+D3uEj9kb8DrzNX5vk401SXJpsP1kriWnXXofBHwLwXeAnRZu7+AhiGK5peP83iXxcO0f89/JoYu74jctbCiLkMC1+7401Byi7YCYE9xxR/kO+9nB3mCXDOhavgw7QA/X9fXXdQ7Xpm+ETsVfPsOZNTBDtjoF/eaROpmqsXzgCg/4kAA2yW2pJBNlBhEySMSHW6zQAWT9fCjFCmR6Ussd9UIq/r+fnNT1JF0g7YRPjXafhDnVDv5lHJYowRS0cmmafU46xkiZHF8lbf5p0CL24TaJcQ+vhAv1bZWcTeg2HnwVJJfuqEAL2VUUzA0DtVaSmAmCZQJb6tSgBDeicDB4TMVw== 
     groups: [docker]
-    passwd: "$6$rounds=4096$randomsalt$hashedpassword"
+    passwd: "$6$rounds=4096$randomsalt$hashedpassword"  
+    ssh_authorized_keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQD4nKTe5oQFsqr6BY0wALZTy2m3Rq2HV6cMyyrkq5x8C/jglxLSrLAcp9eMDpVMdptud7DBKCuiuUPTfB5bq7smR2V+FOXQlZfrBIbTW9gCXFVZaqQRQoshTa9pPFxELNODxt0HpwC5qZ9PsdbXe+b0kg/RyrSV0MxQEi2TcSlrLXbKU0ej85YvjIIyqsMkGedhg5E9u+wLdkZ/wMszwCOvBFKmkHcxkOvX+8Zm9lR24HDugt9vURXIglPYA1T7J6/vJvLIZVgPcbdWwHL/VxSqVs/eFPk13GCNgaiifmXa8OlXmnGKV7CHzyRPUugpUTMZtGXhy05skQXV0BByQ+D3uEj9kb8DrzNX5vk401SXJpsP1kriWnXXofBHwLwXeAnRZu7+AhiGK5peP83iXxcO0f89/JoYu74jctbCiLkMC1+7401Byi7YCYE9xxR/kO+9nB3mCXDOhavgw7QA/X9fXXdQ7Xpm+ETsVfPsOZNTBDtjoF/eaROpmqsXzgCg/4kAA2yW2pJBNlBhEySMSHW6zQAWT9fCjFCmR6Ussd9UIq/r+fnNT1JF0g7YRPjXafhDnVDv5lHJYowRS0cmmafU46xkiZHF8lbf5p0CL24TaJcQ+vhAv1bZWcTeg2HnwVJJfuqEAL2VUUzA0DtVaSmAmCZQJb6tSgBDeicDB4TMVw== benoi@athena
+
+apt:
+  sources:
+    docker.list:
+      source: deb [arch=amd64] https://download.docker.com/linux/ubuntu $RELEASE stable
+      keyid: 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 
 packages:
-  - docker.io
+  - docker-ce
   - docker-ce-cli
 
 runcmd:
   - sudo docker pull alpine:latest
 
+~~~
+
+ssh + docker -v
+
+~~~
+PS C:\Users\benoi\Documents\terra> ssh it5@104.47.137.164
+The authenticity of host '104.47.137.164 (104.47.137.164)' can't be established.
+ED25519 key fingerprint is SHA256:gOFXVSNKexXsswWnVjFlm3XwDP1apJRGyAf3Yn4h8V4.
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '104.47.137.164' (ED25519) to the list of known hosts.
+Welcome to Ubuntu 22.04.5 LTS (GNU/Linux 6.8.0-1021-azure x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/pro
+
+ System information as of Thu Mar 20 09:30:50 UTC 2025
+
+  System load:  0.35              Processes:             134
+  Usage of /:   7.8% of 28.89GB   Users logged in:       0
+  Memory usage: 10%               IPv4 address for eth0: 10.0.2.4
+  Swap usage:   0%
+
+Expanded Security Maintenance for Applications is not enabled.
+
+15 updates can be applied immediately.
+9 of these updates are standard security updates.
+To see these additional updates run: apt list --upgradable
+
+Enable ESM Apps to receive additional future security updates.
+See https://ubuntu.com/esm or run: sudo pro status
+
+
+
+The programs included with the Ubuntu system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by
+applicable law.
+
+To run a command as administrator (user "root"), use "sudo <command>".
+See "man sudo_root" for details.
+
+it5@onavance-vm:~$ cloud-init status
+status: done
+it5@onavance-vm:~$ docker -v
+Docker version 28.0.2, build 0442a73
 ~~~
 
 
@@ -464,62 +563,81 @@ runcmd:
 
 🌞 **Moar `cloud-init` and Terraform configuration**
 
-cloud-init 
+cloud-init :
 
 ~~~
-#cloud-config
+
 users:
   - default
-  - name: it10
+  - name: it5
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
     shell: /bin/bash
+    groups: [docker]
+    passwd: "$6$rounds=4096$randomsalt$hashedpassword"  
     ssh_authorized_keys:
       - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQD4nKTe5oQFsqr6BY0wALZTy2m3Rq2HV6cMyyrkq5x8C/jglxLSrLAcp9eMDpVMdptud7DBKCuiuUPTfB5bq7smR2V+FOXQlZfrBIbTW9gCXFVZaqQRQoshTa9pPFxELNODxt0HpwC5qZ9PsdbXe+b0kg/RyrSV0MxQEi2TcSlrLXbKU0ej85YvjIIyqsMkGedhg5E9u+wLdkZ/wMszwCOvBFKmkHcxkOvX+8Zm9lR24HDugt9vURXIglPYA1T7J6/vJvLIZVgPcbdWwHL/VxSqVs/eFPk13GCNgaiifmXa8OlXmnGKV7CHzyRPUugpUTMZtGXhy05skQXV0BByQ+D3uEj9kb8DrzNX5vk401SXJpsP1kriWnXXofBHwLwXeAnRZu7+AhiGK5peP83iXxcO0f89/JoYu74jctbCiLkMC1+7401Byi7YCYE9xxR/kO+9nB3mCXDOhavgw7QA/X9fXXdQ7Xpm+ETsVfPsOZNTBDtjoF/eaROpmqsXzgCg/4kAA2yW2pJBNlBhEySMSHW6zQAWT9fCjFCmR6Ussd9UIq/r+fnNT1JF0g7YRPjXafhDnVDv5lHJYowRS0cmmafU46xkiZHF8lbf5p0CL24TaJcQ+vhAv1bZWcTeg2HnwVJJfuqEAL2VUUzA0DtVaSmAmCZQJb6tSgBDeicDB4TMVw== benoi@athena
-    groups: [docker]
-    passwd: "$6$rounds=4096$randomsalt$hashedpassword"
-
-packages:
-  - docker.io
-  - docker-compose
 
 write_files:
   - path: /opt/wikijs/docker-compose.yml
     owner: root:root
     permissions: '0644'
     content: |
-      version: '3'
+      version: "3.8"
+
       services:
         db:
-          image: postgres:15-alpine
-          environment:
-            POSTGRES_DB: wiki
-            POSTGRES_PASSWORD: wikijsrocks
-            POSTGRES_USER: wikijs
-          logging:
-            driver: "none"
-          restart: unless-stopped
-          volumes:
-            - db-data:/var/lib/postgresql/data
-        wikijs:
-          image: ghcr.io/requarks/wiki:2
+          image: mysql:5.7
           restart: always
           ports:
-            - "10101:3000"  # Port redirigé de 3000 à 10101
+            - '3306:3306'
           volumes:
-            - /opt/wikijs/data:/wiki/data
+            - "./db/mysql_files:/var/lib/mysql"
+          environment:
+            MYSQL_ROOT_PASSWORD: mysql
+            MYSQL_DATABASE: wiki
+            MYSQL_USER: wiki
+            MYSQL_PASSWORD: mysql
+
+        wiki:
+          image: requarks/wiki
+          restart: always
+          depends_on:
+            - db
+          ports:
+            - "10101:3000"
+          environment:
+            DB_TYPE: mysql
+            DB_HOST: db
+            DB_PORT: 3306
+            DB_USER: wiki
+            DB_PASS: mysql
+            DB_NAME: wiki
+
+apt:
+  sources:
+    docker.list:
+      source: deb [arch=amd64] https://download.docker.com/linux/ubuntu $RELEASE stable
+      keyid: 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+
+packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-compose-plugin
 
 runcmd:
-  - sudo systemctl restart docker
-  - cd /opt/wikijs && sudo docker-compose up -d
+  - docker compose -f /opt/wikijs/docker-compose.yml up -d
+  
 
 ~~~
+
 
 main.tf : 
 
 ~~~
 provider "azurerm" {
   features {}
-  subscription_id = "22df3f3e-3b12-4e67-a5fa-b5a47a09b315"
+  subscription_id = ""
 }
 
 resource "azurerm_resource_group" "main" {
@@ -560,54 +678,40 @@ resource "azurerm_network_interface" "main" {
   }
 }
 
-resource "azurerm_network_interface" "internal" {
-  name                = "${var.prefix}-nic2"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.internal.id
-    private_ip_address_allocation = "Dynamic"
-  }
-}
-
+# Règles de sécurité pour SSH et WikiJS
 resource "azurerm_network_security_group" "ssh" {
-  name                = "ssh"
+  name                = "${var.prefix}-ssh-nsg"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
+
   security_rule {
-    access                     = "Allow"
-    direction                  = "Inbound"
-    name                       = "ssh"
+    name                       = "allow_ssh"
     priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
     source_address_prefix      = "*"
     destination_port_range     = "22"
-    destination_address_prefix = azurerm_network_interface.main.private_ip_address
+    destination_address_prefix = "*"
   }
-}
 
-resource "azurerm_network_security_group" "wikijs" {
-  name                = "WikiJS"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
   security_rule {
-    access                     = "Allow"
-    direction                  = "Inbound"
     name                       = "wikijs"
-    priority                   = 100
+    priority                   = 101
+    direction                  = "Inbound"
+    access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
     source_address_prefix      = "*"
     destination_port_range     = "10101"
-    destination_address_prefix = azurerm_network_interface.main.private_ip_address
+    destination_address_prefix = "*"
   }
 }
 
 resource "azurerm_network_interface_security_group_association" "main" {
   network_interface_id      = azurerm_network_interface.main.id
-  network_security_group_id = azurerm_network_security_group.wikijs.id
+  network_security_group_id = azurerm_network_security_group.ssh.id
 }
 
 resource "azurerm_linux_virtual_machine" "main" {
@@ -615,22 +719,34 @@ resource "azurerm_linux_virtual_machine" "main" {
   resource_group_name             = azurerm_resource_group.main.name
   location                        = azurerm_resource_group.main.location
   size                            = "Standard_F2"
-  admin_username                  = "it10"  
+  admin_username                  = "it5"
   network_interface_ids = [
     azurerm_network_interface.main.id,
-    azurerm_network_interface.internal.id,
   ]
   admin_ssh_key {
-    username   = "it10"  # Utilisateur pour SSH
-    public_key = file("C:\\Users\\benoi\\.ssh\\id_rsa.pub") 
+    username   = "it5"
+    public_key = file("C:\\Users\\benoi\\.ssh\\id_rsa.pub")
   }
   source_image_reference {
     publisher = "Canonical"
     offer     = "0001-com-ubuntu-server-jammy"
     sku       = "22_04-lts"
-    version  
+    version   = "latest"
+  }
+  os_disk {
+    storage_account_type = "Standard_LRS"
+    caching              = "ReadWrite"
+  }
+
+  custom_data = base64encode(file("C:\\Users\\benoi\\Documents\\terra\\cloud-init.txt"))
+}
 
 ~~~
 
+curl :
 
-docker-compose.yml : exactement le même que dans le tp 1 je l'ai juste recup 
+~~~
+it5@onavance-vm:~$ curl localhost:10101
+<!DOCTYPE html><html><head><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta charset="UTF-8"><meta name="viewport" content="user-scalable=yes, width=device-width, initial-scale=1, maximum-scale=5"><meta name="theme-color" content="#1976d2"><meta name="msapplication-TileColor" content="#1976d2"><meta name="msapplication-TileImage" content="/_assets/favicons/mstile-150x150.png"><title>Wiki.js Setup</title><link rel="apple-touch-icon" sizes="180x180" href="/_assets/favicons/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="192x192" href="/_assets/favicons/android-chrome-192x192.png"><link rel="icon" type="image/png" sizes="32x32" href="/_assets/favicons/favicon-32x32.png"><link rel="icon" type="image/png" sizes="16x16" href="/_assets/favicons/favicon-16x16.png"><link rel="mask-icon" href="/_assets/favicons/safari-pinned-tab.svg" color="#1976d2"><link rel="manifest" href="/_assets/manifest.json"><script>var siteConfig = {"title":"Wiki.js"}
+</script><link type="text/css" rel="stylesheet" href="/_assets/css/setup.22871ffac1b643eed4d9.css"><script type="text/javascript" src="/_assets/js/runtime.js?1738531300"></script><script type="text/javascript" src="/_assets/js/setup.js?1738531300"></script></head><body><div id="root"><setup wiki-version="2.5.306"></setup></div></body></html>it5@onavance-vm:~$
+~~~
